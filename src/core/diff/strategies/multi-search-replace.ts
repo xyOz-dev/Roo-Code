@@ -33,39 +33,39 @@ function getSimilarity(original: string, search: string): number {
  * Performs a "middle-out" search of `lines` (between [startIndex, endIndex]) to find
  * the slice that is most similar to `searchChunk`. Returns the best score, index, and matched text.
  */
-function fuzzySearch(lines: string[], searchChunk: string, startIndex: number, endIndex: number) {
+function fuzzySearch(lines: string[], searchChunk: string, startIndex: number, endIndex: number, targetIndex: number = Math.floor((startIndex + endIndex) / 2)) {
 	let bestScore = 0
 	let bestMatchIndex = -1
 	let bestMatchContent = ""
+	let bestDistance = Number.POSITIVE_INFINITY
+
 	const searchLen = searchChunk.split(/\r?\n/).length
 
-	// Middle-out from the midpoint
-	const midPoint = Math.floor((startIndex + endIndex) / 2)
-	let leftIndex = midPoint
-	let rightIndex = midPoint + 1
+	let offset = 0
+	while (targetIndex - offset >= startIndex || targetIndex + offset <= endIndex - searchLen) {
+		const candidates: number[] = []
+		if (targetIndex - offset >= startIndex) candidates.push(targetIndex - offset)
+		if (offset !== 0 && targetIndex + offset <= endIndex - searchLen) candidates.push(targetIndex + offset)
 
-	while (leftIndex >= startIndex || rightIndex <= endIndex - searchLen) {
-		if (leftIndex >= startIndex) {
-			const originalChunk = lines.slice(leftIndex, leftIndex + searchLen).join("\n")
+		for (const idx of candidates) {
+			const originalChunk = lines.slice(idx, idx + searchLen).join("\n")
 			const similarity = getSimilarity(originalChunk, searchChunk)
-			if (similarity > bestScore) {
+			const distance = Math.abs(idx - targetIndex)
+
+			if (similarity > bestScore || (similarity === bestScore && distance < bestDistance)) {
 				bestScore = similarity
-				bestMatchIndex = leftIndex
+				bestMatchIndex = idx
 				bestMatchContent = originalChunk
+				bestDistance = distance
+
+				// Perfect match exactly at target line -> early exit
+				if (bestScore === 1 && bestDistance === 0) {
+					return { bestScore, bestMatchIndex, bestMatchContent }
+				}
 			}
-			leftIndex--
 		}
 
-		if (rightIndex <= endIndex - searchLen) {
-			const originalChunk = lines.slice(rightIndex, rightIndex + searchLen).join("\n")
-			const similarity = getSimilarity(originalChunk, searchChunk)
-			if (similarity > bestScore) {
-				bestScore = similarity
-				bestMatchIndex = rightIndex
-				bestMatchContent = originalChunk
-			}
-			rightIndex++
-		}
+		offset++
 	}
 
 	return { bestScore, bestMatchIndex, bestMatchContent }
@@ -317,28 +317,28 @@ Only use a single line of '=======' between search and replacement content, beca
 			  Ensures the first marker starts at the beginning of the file or right after a newline.
 
 			2. (?<!\\)<<<<<<< SEARCH\s*\n  
-			  Matches the line “<<<<<<< SEARCH” (ignoring any trailing spaces) – the negative lookbehind makes sure it isn’t escaped.
+			  Matches the line "<<<<<<< SEARCH" (ignoring any trailing spaces) – the negative lookbehind makes sure it isn't escaped.
 
 			3. ((?:\:start_line:\s*(\d+)\s*\n))?  
-			  Optionally matches a “:start_line:” line. The outer capturing group is group 1 and the inner (\d+) is group 2.
+			  Optionally matches a ":start_line:" line. The outer capturing group is group 1 and the inner (\d+) is group 2.
 
 			4. ((?:\:end_line:\s*(\d+)\s*\n))?  
-			  Optionally matches a “:end_line:” line. Group 3 is the whole match and group 4 is the digits.
+			  Optionally matches a ":end_line:" line. Group 3 is the whole match and group 4 is the digits.
 
 			5. ((?<!\\)-------\s*\n)?  
-			  Optionally matches the “-------” marker line (group 5).
+			  Optionally matches the "-------" marker line (group 5).
 
 			6. ([\s\S]*?)(?:\n)?  
-			  Non‐greedy match for the “search content” (group 6) up to the next marker.
+			  Non‐greedy match for the "search content" (group 6) up to the next marker.
 
 			7. (?:(?<=\n)(?<!\\)=======\s*\n)  
-			  Matches the “=======” marker on its own line.
+			  Matches the "=======" marker on its own line.
 
 			8. ([\s\S]*?)(?:\n)?  
-			  Non‐greedy match for the “replace content” (group 7).
+			  Non‐greedy match for the "replace content" (group 7).
 
 			9. (?:(?<=\n)(?<!\\)>>>>>>> REPLACE)(?=\n|$)  
-			  Matches the final “>>>>>>> REPLACE” marker on its own line (and requires a following newline or the end of file).
+			  Matches the final ">>>>>>> REPLACE" marker on its own line (and requires a following newline or the end of file).
 		*/
 
 		let matches = [
@@ -450,7 +450,7 @@ Only use a single line of '=======' between search and replacement content, beca
 					bestScore,
 					bestMatchIndex,
 					bestMatchContent: midContent,
-				} = fuzzySearch(resultLines, searchChunk, searchStartIndex, searchEndIndex)
+				} = fuzzySearch(resultLines, searchChunk, searchStartIndex, searchEndIndex, startLine ? startLine - 1 : Math.floor((searchStartIndex + searchEndIndex) / 2))
 				matchIndex = bestMatchIndex
 				bestMatchScore = bestScore
 				bestMatchContent = midContent
@@ -470,7 +470,7 @@ Only use a single line of '=======' between search and replacement content, beca
 					bestScore,
 					bestMatchIndex,
 					bestMatchContent: aggContent,
-				} = fuzzySearch(resultLines, aggressiveSearchChunk, searchStartIndex, searchEndIndex)
+				} = fuzzySearch(resultLines, aggressiveSearchChunk, searchStartIndex, searchEndIndex, startLine ? startLine - 1 : Math.floor((searchStartIndex + searchEndIndex) / 2))
 				if (bestMatchIndex !== -1 && bestScore >= this.fuzzyThreshold) {
 					matchIndex = bestMatchIndex
 					bestMatchScore = bestScore
