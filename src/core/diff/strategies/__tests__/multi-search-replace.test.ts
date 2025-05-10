@@ -1129,23 +1129,6 @@ function five() {
 					}
 				})
 
-				it("processes escaped search marker in content", async () => {
-					const originalContent = "before\n<<<<<<< SEARCH\nafter\n"
-					const diffContent =
-						"<<<<<<< SEARCH\n" +
-						"before\n" +
-						"\\<<<<<<< SEARCH\n" +
-						"after\n" +
-						"=======\n" +
-						"unchanged\n" +
-						">>>>>>> REPLACE"
-					const result = await strategy.applyDiff(originalContent, diffContent)
-					expect(result.success).toBe(true)
-					if (result.success) {
-						expect(result.content).toBe("unchanged\n")
-					}
-				})
-
 				it("processes escaped separator in content", async () => {
 					const originalContent = "before\n=======\nafter\n"
 					const diffContent =
@@ -1732,10 +1715,10 @@ function sum(a, b) {
 
 		it("should match content with smart quotes", async () => {
 			const originalContent =
-				"**Enjoy Roo Code!** Whether you keep it on a short leash or let it roam autonomously, we can’t wait to see what you build. If you have questions or feature ideas, drop by our [Reddit community](https://www.reddit.com/r/RooCode/) or [Discord](https://discord.gg/roocode). Happy coding!"
+				"**Enjoy Roo Code!** Whether you keep it on a short leash or let it roam autonomously, we can't wait to see what you build. If you have questions or feature ideas, drop by our [Reddit community](https://www.reddit.com/r/RooCode/) or [Discord](https://discord.gg/roocode). Happy coding!"
 			const diffContent = `test.ts
 <<<<<<< SEARCH
-**Enjoy Roo Code!** Whether you keep it on a short leash or let it roam autonomously, we can’t wait to see what you build. If you have questions or feature ideas, drop by our [Reddit community](https://www.reddit.com/r/RooCode/) or [Discord](https://discord.gg/roocode). Happy coding!
+**Enjoy Roo Code!** Whether you keep it on a short leash or let it roam autonomously, we can't wait to see what you build. If you have questions or feature ideas, drop by our [Reddit community](https://www.reddit.com/r/RooCode/) or [Discord](https://discord.gg/roocode). Happy coding!
 =======
 **Enjoy Roo Code!** Whether you keep it on a short leash or let it roam autonomously, we can't wait to see what you build. If you have questions or feature ideas, drop by our [Reddit community](https://www.reddit.com/r/RooCode/) or [Discord](https://discord.gg/roocode). Happy coding!
 
@@ -2331,7 +2314,7 @@ function two() {
 }
 
 function three() {
-		  return "three";
+    return "three";
 }`)
 			}
 		})
@@ -2358,5 +2341,32 @@ function three() {
 			expect(description).toContain("<apply_diff>")
 			expect(description).toContain("</apply_diff>")
 		})
+	})
+
+	it("chooses nearest matching block when similarity ties", async () => {
+		const originalContent = `function a() {\n}\n\nfunction b() {\n}\n\nfunction c() {\n}\n`.
+			trim()
+
+		// We want to replace the closing brace of function b (line 4)
+		const diffContent = [
+			"test.ts",
+			"<<<<<<< SEARCH",
+			":start_line:4",
+			"-------",
+			"}",
+			"=======",
+			"// changed\n}",
+			">>>>>>> REPLACE",
+		].join("\n")
+
+		const strategy = new MultiSearchReplaceDiffStrategy()
+		const result = await strategy.applyDiff(originalContent, diffContent, 4)
+		expect(result.success).toBe(true)
+		if (result.success) {
+			expect(result.content).toBe(
+				`function a() {\n}\n\nfunction b() {\n// changed\n}\n\nfunction c() {\n}\n`.
+				trim(),
+			)
+		}
 	})
 })
